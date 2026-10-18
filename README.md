@@ -10,10 +10,18 @@ Smart Urban Mobility and Traffic IoT Dataset (Kaggle).
 pip install -r requirements.txt
 ```
 
-Download the dataset from Kaggle and put `smart_city_traffic_mobility.csv` in
-`data/` (the CSV is not committed).
+The dataset is included as `data/smart_city_traffic_mobility.zip` and is read
+directly from the zip. An unzipped `data/smart_city_traffic_mobility.csv` is
+used instead if present (the CSV itself is not committed).
 
 ## Usage
+
+On Windows, double-click `start.bat`. It installs missing packages on the
+first run, trains the model, and keeps the window open so the results or any
+error stay visible. (Double-clicking `main.py` directly closes the window as
+soon as the script ends.)
+
+From a terminal:
 
 ```bash
 python src/main.py                 # train, evaluate, save to outputs/
