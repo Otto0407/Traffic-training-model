@@ -33,11 +33,8 @@ python src/predict.py --input new_rows.csv --output predictions.csv
 ```
 
 `main.py` options: `--epochs`, `--patience`, `--batch-size`, `--lr`,
-`--dropout`, `--seed`, `--no-class-weights`, `--balanced-sampling`,
+`--dropout`, `--seed`, `--class-weights`, `--balanced-sampling`,
 `--input-noise`, `--data`, `--output-dir`.
-
-The written-up data analysis for the progress report is in
-[`docs/data_report.md`](docs/data_report.md).
 
 Outputs written to `outputs/`: `model.pt`, `preprocessor.joblib`,
 `metrics.json`, `training_curves.png`, `confusion_matrix.png`.
@@ -75,14 +72,14 @@ Outputs written to `outputs/`: `model.pt`, `preprocessor.joblib`,
    so the model is always evaluated on hours it has not seen.
 2. **Preprocessing fitted on train only.** Numerical features use
    `StandardScaler`; categorical features (including `hour` and `day_of_week`)
-   use one-hot encoding; binary flags pass through unchanged. This gives 172
+   use one-hot encoding; binary flags pass through unchanged. This gives 72
    inputs.
 3. **Model.** Input → 256 → 128 → 64 → 4, with ReLU and Dropout (0.3) after
    each hidden layer.
-4. **Training.** Adam (lr 1e-3), batch size 512, CrossEntropyLoss weighted by
-   inverse class frequency because Moderate and High are only about 7–8% of
-   rows. Training stops when validation loss has not improved for 10 epochs,
-   and the best weights are restored.
+4. **Training.** Adam (lr 1e-3), batch size 512, unweighted CrossEntropyLoss.
+   Weighting the loss by inverse class frequency was tried and made results
+   worse (see Results). Training stops when validation loss has not improved
+   for 10 epochs, and the best weights are restored.
 5. **Evaluation.** Accuracy and macro/weighted precision, recall and F1 on the
    test set. Macro F1 is the primary metric, compared against a majority-class
    baseline.
@@ -100,9 +97,14 @@ tree on each column alone. The majority-class rate is 0.498.
 | Same-hour traffic state | `vehicle_count`, `heavy_vehicle_count`, `motorcycle_count`, `public_transport_count`, `traffic_flow_rate`, `average_speed`, `traffic_density`, `queue_length`, `average_wait_time` | Measurements of the congestion being predicted (`traffic_density` alone: 0.960; correlation with the score up to 0.95; `traffic_flow_rate` equals `vehicle_count`) |
 | Derived from traffic | `emission_estimate`, `fuel_waste_estimate`, `air_quality_index` | Consequences of congestion (up to 0.906 alone) |
 | Signal response | `signal_cycle_seconds`, `green_light_duration` | The simulator adapts signals to congestion (a 120 s cycle occurs only with High/Severe; green time alone: 0.898). It is also what a controller would set *from* this model's output, so as an input it would be circular |
-| Identifiers | `record_id`, `road_id`, `latitude`, `longitude`, `timestamp` | IDs or redundant with `intersection_id` and the calendar features |
+| Identifiers | `record_id`, `road_id`, `latitude`, `longitude`, `timestamp` | IDs, or redundant with `city_zone`, the road attributes and the existing calendar columns |
+| No effect | `intersection_id` | Within a zone, intersections differ only by noise. Removing it left test macro F1 unchanged over 3 seeds and cut the input from 172 to 72 dimensions |
 
-**Kept:** location and road context (`city_zone`, `intersection_id`,
+Vehicle-mix ratios (heavy / motorcycle / public transport / other as shares of
+`vehicle_count`) were also tested as extra inputs. They avoid the total-volume
+leak but carry no signal in this simulation (same macro F1), so they are not used.
+
+**Kept:** location and road context (`city_zone`,
 `road_type`, `lanes`, `speed_limit`, `traffic_camera_count`, nearby
 school/hospital/market), calendar (`hour`, `day_of_week`, `is_weekend`,
 `is_holiday`, `rush_hour`, `peak_period`), weather (`temperature`,
@@ -112,25 +114,46 @@ events (`construction_activity`, `public_event`, `accident_reported`,
 These are all known before or at the start of the hour, so the model
 *forecasts* congestion instead of describing it after the fact.
 
-## Results (test set, seed 42)
+## Results (test set)
+
+Final model, seed 42:
 
 | Model | Accuracy | Macro precision | Macro recall | Macro F1 | Weighted F1 |
 | --- | --- | --- | --- | --- | --- |
 | Majority baseline | 0.493 | 0.123 | 0.250 | 0.165 | 0.326 |
-| MLP | 0.945 | 0.880 | 0.956 | **0.909** | 0.949 |
+| Lookup: hour × weekend × zone | 0.950 | - | - | 0.890 | 0.947 |
+| MLP | 0.967 | 0.948 | 0.917 | **0.930** | 0.965 |
 
-Per class F1: Low 0.952, Moderate 0.760, High 0.935, Severe 0.988. Most
-errors are Low hours predicted as Moderate (precision for Moderate is 0.63),
-mainly in the evening hours 18–19, where the two classes are split roughly
-50/50 in the data. Early stopping picked epoch 7.
+Per class F1: Low 0.975, Moderate 0.813, High 0.943, Severe 0.990.
+
+Variants (`experiments.py`, mean of 3 seeds, before `intersection_id` was
+dropped):
+
+| Variant | Accuracy | Macro F1 |
+| --- | --- | --- |
+| All columns incl. leaking ones | 0.987 | 0.975 |
+| Random split instead of time split | 0.944 | 0.908 |
+| Class-weighted loss | 0.945 | 0.908 |
+| Unweighted loss (adopted) | 0.966 | 0.929 |
+| Oversampling minority classes | 0.946 | 0.911 |
+| Gaussian input noise (std 0.1) | 0.942 | 0.905 |
+| No dropout | 0.943 | 0.906 |
+| No time features | 0.343 | 0.299 |
+
+### Where the model fails
+
+Half of the remaining errors are in the evening (17–19h), mostly Moderate
+predicted as Low. On weekdays at 18–19h the label depends on the zone (Downtown
+and Financial District are ~90% Moderate, the other zones ~44%) and on bad
+weather, accidents and public events, which push it to Moderate. With clear
+weather and no incident, the outer zones are close to a coin flip between Low
+and Moderate, and the error rate there is about 32%. The class-weighted model
+predicted Moderate for every one of these rows, which is why it was dropped.
 
 ### Limitation: the simulator is driven mainly by time of day
 
-Even without the leaking columns, the task stays fairly easy. `hour` alone
-predicts the label with 0.88 accuracy: 00–06 and 20–23 are almost always Low,
-and 10–14 are almost always Severe. Weather, events and accidents add little
-signal in this simulation. In a quick check with a gradient-boosted tree that
-also had `hour`, `rush_hour` and `peak_period` removed, macro F1 fell to about
-0.41. So most of the MLP's performance comes from learning the daily pattern
-per intersection. Real traffic is noisier, so these numbers should not be read
-as real-world performance.
+`hour` alone predicts the label with 0.88 accuracy, and a lookup table on hour,
+weekend and zone reaches 0.950 accuracy. Removing the time features drops macro
+F1 to 0.30. Weather and events matter only around the evening transition.
+Real traffic is noisier, so these numbers should not be read as real-world
+performance.

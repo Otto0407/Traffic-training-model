@@ -30,14 +30,15 @@ TIME_FEATURES = ("hour", "rush_hour", "peak_period")
 EXPERIMENTS = [
     ("all_columns", "Proposal plan: all 44 columns incl. leaking ones", "all", "time", {}),
     ("random_split", "Final features, random 60/20/20 split", "leak_free", "random", {}),
-    ("final", "Final model: leak-free features, time split, weighted loss", "leak_free", "time", {}),
-    ("no_class_weights", "Unweighted CrossEntropyLoss", "leak_free", "time", {"class_weighted_loss": False}),
+    ("final", "Final model: leak-free features, time split, unweighted loss", "leak_free", "time", {}),
+    ("class_weights", "CrossEntropyLoss weighted by inverse class frequency", "leak_free", "time",
+     {"class_weighted_loss": True}),
     (
         "oversampling",
-        "Balanced mini-batches (random oversampling) instead of loss weights",
+        "Balanced mini-batches (random oversampling of minority classes)",
         "leak_free",
         "time",
-        {"class_weighted_loss": False, "balanced_sampling": True},
+        {"balanced_sampling": True},
     ),
     ("input_noise", "Gaussian noise (std 0.1) on numerical inputs", "leak_free", "time", {"input_noise": 0.1}),
     ("no_dropout", "Dropout 0 (early stopping still on)", "leak_free", "time", {"dropout": 0.0}),
@@ -46,7 +47,7 @@ EXPERIMENTS = [
         "Dropout 0 and no early stopping (40 epochs, last weights)",
         "leak_free",
         "time",
-        {"dropout": 0.0, "max_epochs": 40, "patience": 10**6},
+        {"dropout": 0.0, "max_epochs": 40, "patience": 10**6, "restore_best_weights": False},
     ),
     ("no_time_features", "Final features minus hour / rush_hour / peak_period", "no_time", "time", {}),
 ]

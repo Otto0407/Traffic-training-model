@@ -51,7 +51,8 @@ def train_model(
 ) -> tuple:
     """Train until validation loss stops improving for cfg.patience epochs.
 
-    Returns the model with its best weights restored, plus the per-epoch history.
+    Returns the model (with its best weights restored unless
+    cfg.restore_best_weights is False) plus the per-epoch history.
     """
     model.to(device)
     weight = loss_weights.to(device) if loss_weights is not None else None
@@ -84,8 +85,9 @@ def train_model(
                     print(f"Early stopping: no val loss improvement for {cfg.patience} epochs.")
                 break
 
-    model.load_state_dict(best_state)
     history["best_epoch"] = best_epoch
-    if verbose:
-        print(f"Restored best weights from epoch {best_epoch} (val loss {best_loss:.4f}).")
+    if cfg.restore_best_weights:
+        model.load_state_dict(best_state)
+        if verbose:
+            print(f"Restored best weights from epoch {best_epoch} (val loss {best_loss:.4f}).")
     return model, history

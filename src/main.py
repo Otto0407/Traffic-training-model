@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=defaults.batch_size)
     parser.add_argument("--lr", type=float, default=defaults.learning_rate)
     parser.add_argument("--dropout", type=float, default=defaults.dropout)
-    parser.add_argument("--no-class-weights", action="store_true", help="Use unweighted CrossEntropyLoss.")
+    parser.add_argument("--class-weights", action="store_true", help="Weight CrossEntropyLoss by inverse class frequency.")
     parser.add_argument("--balanced-sampling", action="store_true", help="Oversample minority classes.")
     parser.add_argument("--input-noise", type=float, default=defaults.input_noise, help="Gaussian noise std (augmentation).")
     parser.add_argument("--seed", type=int, default=defaults.seed)
@@ -51,7 +51,7 @@ def main():
         batch_size=args.batch_size,
         learning_rate=args.lr,
         dropout=args.dropout,
-        class_weighted_loss=not args.no_class_weights,
+        class_weighted_loss=args.class_weights,
         balanced_sampling=args.balanced_sampling,
         input_noise=args.input_noise,
         seed=args.seed,
