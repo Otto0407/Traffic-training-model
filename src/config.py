@@ -95,4 +95,9 @@ class TrainConfig:
     # Weight CrossEntropyLoss by inverse class frequency (computed on the
     # training set) so the rare Moderate/High classes are not ignored.
     class_weighted_loss: bool = True
+    # Oversample minority classes so each mini-batch is roughly class-balanced.
+    balanced_sampling: bool = False
+    # Std of Gaussian noise added to the standardised numerical inputs during
+    # training (data augmentation); 0 disables it.
+    input_noise: float = 0.0
     seed: int = 42

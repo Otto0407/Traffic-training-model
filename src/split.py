@@ -1,5 +1,6 @@
 """Chronological train/validation/test split."""
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 from config import TIMESTAMP
 
@@ -21,4 +22,14 @@ def time_split(df: pd.DataFrame, train_frac: float, val_frac: float) -> tuple:
     train = df[df[TIMESTAMP] < train_end]
     val = df[(df[TIMESTAMP] >= train_end) & (df[TIMESTAMP] < val_end)]
     test = df[df[TIMESTAMP] >= val_end]
+    return train, val, test
+
+
+def random_split(df: pd.DataFrame, train_frac: float, val_frac: float, seed: int, stratify_col: str) -> tuple:
+    """Stratified random split. Used only as a comparison to show why the
+    chronological split is needed: random rows from the same hour end up on
+    both sides of the split."""
+    train, rest = train_test_split(df, train_size=train_frac, random_state=seed, stratify=df[stratify_col])
+    val_share = val_frac / (1 - train_frac)
+    val, test = train_test_split(rest, train_size=val_share, random_state=seed, stratify=rest[stratify_col])
     return train, val, test

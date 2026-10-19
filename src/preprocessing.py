@@ -4,19 +4,22 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from config import BINARY_FEATURES, CATEGORICAL_FEATURES, CLASS_ORDER, NUMERICAL_FEATURES
+from config import CLASS_ORDER
+from features import LEAK_FREE, FeatureSet
 
 
-def build_preprocessor() -> ColumnTransformer:
+def build_preprocessor(features: FeatureSet = LEAK_FREE) -> ColumnTransformer:
+    """Numerical columns come first in the output, so input noise can target
+    them by index (see train.py)."""
     return ColumnTransformer(
         transformers=[
-            ("num", StandardScaler(), NUMERICAL_FEATURES),
+            ("num", StandardScaler(), list(features.numerical)),
             (
                 "cat",
                 OneHotEncoder(handle_unknown="ignore", sparse_output=False),
-                CATEGORICAL_FEATURES,
+                list(features.categorical),
             ),
-            ("bin", "passthrough", BINARY_FEATURES),
+            ("bin", "passthrough", list(features.binary)),
         ]
     )
 

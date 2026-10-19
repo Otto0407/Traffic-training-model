@@ -5,31 +5,18 @@ Usage: python src/main.py [--data PATH] [--output-dir DIR] [--epochs N] ...
 """
 import argparse
 import json
-import random
 from dataclasses import asdict
 from pathlib import Path
 
 import joblib
-import numpy as np
 import torch
 
 from baseline import majority_baseline
-from config import CLASS_ORDER, DEFAULT_DATA_PATH, DEFAULT_OUTPUT_DIR, TIMESTAMP, TrainConfig
+from config import DEFAULT_DATA_PATH, DEFAULT_OUTPUT_DIR, TIMESTAMP, TrainConfig
 from data_loader import load_data
-from dataset import make_loader
 from evaluate import compute_metrics, predict
-from features import select_features
-from model import CongestionMLP
+from pipeline import fit_model, prepare_data, set_seed
 from plots import plot_confusion_matrix, plot_history
-from preprocessing import build_preprocessor, encode_labels
-from split import time_split
-from train import class_weights, train_model
-
-
-def set_seed(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,6 +30,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=defaults.learning_rate)
     parser.add_argument("--dropout", type=float, default=defaults.dropout)
     parser.add_argument("--no-class-weights", action="store_true", help="Use unweighted CrossEntropyLoss.")
+    parser.add_argument("--balanced-sampling", action="store_true", help="Oversample minority classes.")
+    parser.add_argument("--input-noise", type=float, default=defaults.input_noise, help="Gaussian noise std (augmentation).")
     parser.add_argument("--seed", type=int, default=defaults.seed)
     return parser.parse_args()
 
@@ -63,6 +52,8 @@ def main():
         learning_rate=args.lr,
         dropout=args.dropout,
         class_weighted_loss=not args.no_class_weights,
+        balanced_sampling=args.balanced_sampling,
+        input_noise=args.input_noise,
         seed=args.seed,
     )
     set_seed(cfg.seed)
@@ -70,34 +61,20 @@ def main():
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
 
-    # 1. Load and split chronologically
+    # 1-2. Load, split chronologically, preprocess (fitted on train only)
     df = load_data(args.data)
-    train_df, val_df, test_df = time_split(df, cfg.train_frac, cfg.val_frac)
-    for name, part in (("train", train_df), ("val", val_df), ("test", test_df)):
-        print(f"{name:<5} {len(part):>7} rows  {part[TIMESTAMP].min()} -> {part[TIMESTAMP].max()}")
-
-    # 2. Feature selection and preprocessing (fitted on train only)
-    X_train, y_train = select_features(train_df)
-    X_val, y_val = select_features(val_df)
-    X_test, y_test = select_features(test_df)
-
-    preprocessor = build_preprocessor()
-    X_train = preprocessor.fit_transform(X_train).astype(np.float32)
-    X_val = preprocessor.transform(X_val).astype(np.float32)
-    X_test = preprocessor.transform(X_test).astype(np.float32)
-    y_train, y_val, y_test = encode_labels(y_train), encode_labels(y_val), encode_labels(y_test)
-    print(f"Input dimension after encoding: {X_train.shape[1]}")
+    data = prepare_data(df, cfg)
+    for name, X in (("train", data.X_train), ("val", data.X_val), ("test", data.X_test)):
+        print(f"{name:<5} {len(X):>7} rows")
+    print(f"Test period: {data.test_df[TIMESTAMP].min()} -> {data.test_df[TIMESTAMP].max()}")
+    print(f"Input dimension after encoding: {data.X_train.shape[1]}")
 
     # 3. Train
-    train_loader = make_loader(X_train, y_train, cfg.batch_size, shuffle=True, seed=cfg.seed)
-    val_loader = make_loader(X_val, y_val, cfg.batch_size, shuffle=False)
-    model = CongestionMLP(X_train.shape[1], cfg.hidden_sizes, len(CLASS_ORDER), cfg.dropout)
-    weights = class_weights(y_train, len(CLASS_ORDER)) if cfg.class_weighted_loss else None
-    model, history = train_model(model, train_loader, val_loader, cfg, device, weights)
+    model, history = fit_model(data, cfg, device)
 
     # 4. Evaluate on the held-out test set
-    mlp_metrics = compute_metrics(y_test, predict(model, X_test, device))
-    base_metrics = compute_metrics(y_test, majority_baseline(y_train, len(y_test)))
+    mlp_metrics = compute_metrics(data.y_test, predict(model, data.X_test, device))
+    base_metrics = compute_metrics(data.y_test, majority_baseline(data.y_train, len(data.y_test)))
 
     print("\n=== Test set ===")
     print(summarise("baseline", base_metrics))
@@ -106,10 +83,10 @@ def main():
 
     # 5. Save artefacts
     torch.save(
-        {"state_dict": model.state_dict(), "input_dim": X_train.shape[1], "config": asdict(cfg)},
+        {"state_dict": model.state_dict(), "input_dim": data.X_train.shape[1], "config": asdict(cfg)},
         out / "model.pt",
     )
-    joblib.dump(preprocessor, out / "preprocessor.joblib")
+    joblib.dump(data.preprocessor, out / "preprocessor.joblib")
     with open(out / "metrics.json", "w") as f:
         json.dump(
             {

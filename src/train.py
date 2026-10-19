@@ -14,7 +14,7 @@ def class_weights(y_train: np.ndarray, num_classes: int) -> torch.Tensor:
     return torch.as_tensor(weights, dtype=torch.float32)
 
 
-def _run_epoch(model, loader, criterion, device, optimizer=None) -> tuple:
+def _run_epoch(model, loader, criterion, device, optimizer=None, noise_std=0.0, num_numeric=0) -> tuple:
     """One pass over loader; trains when an optimizer is given. Returns (loss, accuracy)."""
     training = optimizer is not None
     model.train(training)
@@ -22,6 +22,11 @@ def _run_epoch(model, loader, criterion, device, optimizer=None) -> tuple:
     with torch.set_grad_enabled(training):
         for xb, yb in loader:
             xb, yb = xb.to(device), yb.to(device)
+            if training and noise_std > 0 and num_numeric > 0:
+                # Augmentation: jitter the standardised numerical features only;
+                # one-hot and binary columns stay exact.
+                xb = xb.clone()
+                xb[:, :num_numeric] += noise_std * torch.randn_like(xb[:, :num_numeric])
             logits = model(xb)
             loss = criterion(logits, yb)
             if training:
@@ -41,6 +46,8 @@ def train_model(
     cfg,
     device: torch.device,
     loss_weights: torch.Tensor = None,
+    num_numeric: int = 0,
+    verbose: bool = True,
 ) -> tuple:
     """Train until validation loss stops improving for cfg.patience epochs.
 
@@ -55,14 +62,17 @@ def train_model(
     best_loss, best_state, best_epoch, stale = float("inf"), None, 0, 0
 
     for epoch in range(1, cfg.max_epochs + 1):
-        train_loss, train_acc = _run_epoch(model, train_loader, criterion, device, optimizer)
+        train_loss, train_acc = _run_epoch(
+            model, train_loader, criterion, device, optimizer, cfg.input_noise, num_numeric
+        )
         val_loss, val_acc = _run_epoch(model, val_loader, criterion, device)
         for key, value in zip(history, (train_loss, train_acc, val_loss, val_acc)):
             history[key].append(value)
-        print(
-            f"epoch {epoch:3d} | train loss {train_loss:.4f} acc {train_acc:.4f} "
-            f"| val loss {val_loss:.4f} acc {val_acc:.4f}"
-        )
+        if verbose:
+            print(
+                f"epoch {epoch:3d} | train loss {train_loss:.4f} acc {train_acc:.4f} "
+                f"| val loss {val_loss:.4f} acc {val_acc:.4f}"
+            )
 
         if val_loss < best_loss:
             best_loss, best_epoch, stale = val_loss, epoch, 0
@@ -70,10 +80,12 @@ def train_model(
         else:
             stale += 1
             if stale >= cfg.patience:
-                print(f"Early stopping: no val loss improvement for {cfg.patience} epochs.")
+                if verbose:
+                    print(f"Early stopping: no val loss improvement for {cfg.patience} epochs.")
                 break
 
     model.load_state_dict(best_state)
     history["best_epoch"] = best_epoch
-    print(f"Restored best weights from epoch {best_epoch} (val loss {best_loss:.4f}).")
+    if verbose:
+        print(f"Restored best weights from epoch {best_epoch} (val loss {best_loss:.4f}).")
     return model, history

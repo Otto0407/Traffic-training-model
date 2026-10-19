@@ -25,12 +25,19 @@ From a terminal:
 
 ```bash
 python src/main.py                 # train, evaluate, save to outputs/
+python src/explore.py              # data summary tables and figures -> outputs/data/
+python src/experiments.py          # compare variants over 3 seeds -> outputs/experiments/
+python src/error_analysis.py       # where the trained model fails -> outputs/errors/
 python src/leakage_check.py        # evidence for the feature selection
 python src/predict.py --input new_rows.csv --output predictions.csv
 ```
 
 `main.py` options: `--epochs`, `--patience`, `--batch-size`, `--lr`,
-`--dropout`, `--seed`, `--no-class-weights`, `--data`, `--output-dir`.
+`--dropout`, `--seed`, `--no-class-weights`, `--balanced-sampling`,
+`--input-noise`, `--data`, `--output-dir`.
+
+The written-up data analysis for the progress report is in
+[`docs/data_report.md`](docs/data_report.md).
 
 Outputs written to `outputs/`: `model.pt`, `preprocessor.joblib`,
 `metrics.json`, `training_curves.png`, `confusion_matrix.png`.
@@ -41,15 +48,21 @@ Outputs written to `outputs/`: `model.pt`, `preprocessor.joblib`,
 | --- | --- |
 | `src/config.py` | Paths, kept/dropped feature lists, hyperparameters |
 | `src/data_loader.py` | Read the CSV, parse timestamps, validate labels |
-| `src/features.py` | Select model inputs; fail if any column is unaccounted for |
+| `src/features.py` | Feature sets; select model inputs; fail if any column is unaccounted for |
 | `src/split.py` | Chronological 60/20/20 train/validation/test split |
 | `src/preprocessing.py` | StandardScaler + one-hot encoding, label encoding |
-| `src/dataset.py` | Arrays to PyTorch `DataLoader` |
+| `src/dataset.py` | Arrays to PyTorch `DataLoader` (optional class-balanced sampling) |
 | `src/model.py` | `CongestionMLP` (`nn.Module`) |
-| `src/train.py` | Mini-batch training, per-epoch validation, early stopping |
-| `src/baseline.py` | Majority-class baseline |
+| `src/pipeline.py` | Shared split -> preprocess -> train steps |
+| `src/train.py` | Mini-batch training, input-noise augmentation, early stopping |
+| `src/baseline.py` | Majority-class and lookup-table baselines |
 | `src/evaluate.py` | Prediction and test metrics |
 | `src/plots.py` | Training curves and confusion matrix |
+| `src/style.py` | Shared figure colours and styling |
+| `src/md_table.py` | DataFrame to Markdown table |
+| `src/explore.py` | Exploratory data analysis |
+| `src/experiments.py` | Multi-seed comparison of modelling choices |
+| `src/error_analysis.py` | Error breakdown of the trained model |
 | `src/leakage_check.py` | Single-feature predictiveness report |
 | `src/main.py` | Runs the full pipeline |
 | `src/predict.py` | Predicts labels for new rows with a saved model |
