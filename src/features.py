@@ -69,3 +69,19 @@ def select_features(df: pd.DataFrame, features: FeatureSet = LEAK_FREE) -> tuple
             )
 
     return df[kept].copy(), df[TARGET].copy()
+
+
+VEHICLE_RATIOS = ("heavy_vehicle_ratio", "motorcycle_ratio", "public_transport_ratio", "other_vehicle_ratio")
+
+
+def add_vehicle_ratios(df: pd.DataFrame) -> pd.DataFrame:
+    """Vehicle mix as shares of vehicle_count. Dividing by the total removes
+    the traffic-volume leak; only used in experiments.py (it did not help)."""
+    out = df.copy()
+    total = out["vehicle_count"]
+    other = total - out["heavy_vehicle_count"] - out["motorcycle_count"] - out["public_transport_count"]
+    out["heavy_vehicle_ratio"] = out["heavy_vehicle_count"] / total
+    out["motorcycle_ratio"] = out["motorcycle_count"] / total
+    out["public_transport_ratio"] = out["public_transport_count"] / total
+    out["other_vehicle_ratio"] = other / total
+    return out

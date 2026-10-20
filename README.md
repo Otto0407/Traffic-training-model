@@ -21,6 +21,17 @@ first run, trains the model, and keeps the window open so the results or any
 error stay visible. (Double-clicking `main.py` directly closes the window as
 soon as the script ends.)
 
+To produce every table and figure for the report in one go, double-click
+`run_all.bat` (or run the four scripts below in order). The multi-seed
+experiments take about an hour on a laptop CPU.
+
+| Output | Contents |
+| --- | --- |
+| `outputs/metrics.json`, `training_curves.png`, `confusion_matrix.png` | Final model metrics and plots |
+| `outputs/data/` | Data summary tables, class distribution, label by hour, single-feature leakage |
+| `outputs/errors/` | Error breakdown tables, error rate by hour |
+| `outputs/experiments/` | `summary.md` (mean ± std over 3 seeds), `results.csv` (every run), `macro_f1.png` |
+
 From a terminal:
 
 ```bash

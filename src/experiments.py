@@ -18,7 +18,7 @@ from baseline import lookup_baseline, majority_baseline
 from config import CLASS_ORDER, DEFAULT_DATA_PATH, DEFAULT_OUTPUT_DIR, TrainConfig
 from data_loader import load_data
 from evaluate import compute_metrics, predict
-from features import LEAK_FREE, all_columns_feature_set
+from features import LEAK_FREE, VEHICLE_RATIOS, FeatureSet, add_vehicle_ratios, all_columns_feature_set
 from md_table import to_markdown
 from pipeline import fit_model, prepare_data
 from split import time_split
@@ -50,6 +50,8 @@ EXPERIMENTS = [
         {"dropout": 0.0, "max_epochs": 40, "patience": 10**6, "restore_best_weights": False},
     ),
     ("no_time_features", "Final features minus hour / rush_hour / peak_period", "no_time", "time", {}),
+    ("with_intersection_id", "Final features plus intersection_id (172 inputs)", "with_intersection", "time", {}),
+    ("vehicle_ratios", "Final features plus 4 vehicle-mix ratios", "vehicle_ratios", "time", {}),
 ]
 
 
@@ -58,6 +60,9 @@ def feature_sets(df: pd.DataFrame) -> dict:
         "all": all_columns_feature_set(df),
         "leak_free": LEAK_FREE,
         "no_time": LEAK_FREE.without(*TIME_FEATURES),
+        "with_intersection": FeatureSet(LEAK_FREE.categorical + ("intersection_id",), LEAK_FREE.numerical,
+                                        LEAK_FREE.binary),
+        "vehicle_ratios": FeatureSet(LEAK_FREE.categorical, LEAK_FREE.numerical + VEHICLE_RATIOS, LEAK_FREE.binary),
     }
 
 
@@ -97,6 +102,8 @@ def run_baselines(df: pd.DataFrame, cfg: TrainConfig) -> list:
 
 def run_mlp(df, name, fs_key, split, overrides, seed, sets, device) -> dict:
     cfg = replace(TrainConfig(), seed=seed, **overrides)
+    if fs_key == "vehicle_ratios":
+        df = add_vehicle_ratios(df)
     data = prepare_data(df, cfg, sets[fs_key], split)
     model, history = fit_model(data, cfg, device, verbose=False)
     best = history["best_epoch"] - 1
@@ -118,7 +125,9 @@ def run_mlp(df, name, fs_key, split, overrides, seed, sets, device) -> dict:
 
 
 def summarise(results: pd.DataFrame) -> pd.DataFrame:
-    metrics = ["accuracy", "macro_f1", "weighted_f1"] + [f"f1_{c}" for c in CLASS_ORDER]
+    metrics = ["accuracy", "macro_precision", "macro_recall", "macro_f1", "weighted_f1"] + [
+        f"f1_{c}" for c in CLASS_ORDER
+    ]
     order = list(dict.fromkeys(results["experiment"]))
     agg = results.groupby("experiment", sort=False)[metrics].agg(["mean", "std"]).reindex(order)
     out = pd.DataFrame(index=agg.index)
