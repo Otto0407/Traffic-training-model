@@ -137,19 +137,25 @@ Final model, seed 42:
 
 Per class F1: Low 0.975, Moderate 0.813, High 0.943, Severe 0.990.
 
-Variants (`experiments.py`, mean of 3 seeds, before `intersection_id` was
-dropped):
+Variants (`experiments.py`, mean of 3 seeds; each row changes one thing
+relative to the final model):
 
 | Variant | Accuracy | Macro F1 |
 | --- | --- | --- |
-| All columns incl. leaking ones | 0.987 | 0.975 |
-| Random split instead of time split | 0.944 | 0.908 |
-| Class-weighted loss | 0.945 | 0.908 |
-| Unweighted loss (adopted) | 0.966 | 0.929 |
-| Oversampling minority classes | 0.946 | 0.911 |
-| Gaussian input noise (std 0.1) | 0.942 | 0.905 |
-| No dropout | 0.943 | 0.906 |
-| No time features | 0.343 | 0.299 |
+| Final model | 0.966 | 0.930 |
+| All columns incl. leaking ones | 0.992 | 0.984 |
+| Random split instead of time split | 0.967 | 0.931 |
+| Class-weighted loss | 0.945 | 0.909 |
+| Oversampling minority classes | 0.945 | 0.908 |
+| Gaussian input noise (std 0.1) | 0.966 | 0.930 |
+| No dropout | 0.965 | 0.929 |
+| No dropout and no early stopping (40 epochs) | 0.964 | 0.926 |
+| No time features | 0.515 | 0.327 |
+| Plus `intersection_id` | 0.966 | 0.929 |
+| Plus vehicle-mix ratios | 0.966 | 0.930 |
+
+Seed-to-seed standard deviation is at most 0.004 except for "no time
+features" (0.018), so only differences larger than that are meaningful.
 
 ### Where the model fails
 
