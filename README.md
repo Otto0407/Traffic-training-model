@@ -56,6 +56,7 @@ Outputs written to `outputs/`: `model.pt`, `preprocessor.joblib`,
 | --- | --- |
 | `src/config.py` | Paths, kept/dropped feature lists, hyperparameters |
 | `src/data_loader.py` | Read the CSV, parse timestamps, validate labels |
+| `src/cleaning.py` | Drop duplicate / unusable rows, flag impossible values as missing |
 | `src/features.py` | Feature sets; select model inputs; fail if any column is unaccounted for |
 | `src/split.py` | Chronological 60/20/20 train/validation/test split |
 | `src/preprocessing.py` | StandardScaler + one-hot encoding, label encoding |
@@ -74,24 +75,32 @@ Outputs written to `outputs/`: `model.pt`, `preprocessor.joblib`,
 | `src/leakage_check.py` | Single-feature predictiveness report |
 | `src/main.py` | Runs the full pipeline |
 | `src/predict.py` | Predicts labels for new rows with a saved model |
+| `tests/test_cleaning.py` | Checks cleaning on the real data and on a deliberately dirty sample |
 
 ## Method
 
-1. **Time-based split.** The 85 days of hourly data are cut on unique
+1. **Cleaning.** Drop exact duplicates, repeated readings for the same
+   intersection and hour, and rows without a valid label or timestamp. Values
+   outside a plausible range (`VALID_RANGES` in `config.py`) and non-0/1 flags
+   are set to missing. The current dataset is clean, so nothing is removed,
+   but the step protects against future data. A report is printed and saved in
+   `metrics.json`.
+2. **Time-based split.** The 85 days of hourly data are cut on unique
    timestamps: train 2026-01-01 to 02-20, validation 02-21 to 03-09, test
    03-10 to 03-26. Every intersection at a given hour falls in the same subset,
    so the model is always evaluated on hours it has not seen.
-2. **Preprocessing fitted on train only.** Numerical features use
-   `StandardScaler`; categorical features (including `hour` and `day_of_week`)
+3. **Preprocessing fitted on train only.** Missing values are filled with the
+   training-set median (numerical) or most frequent value (categorical and
+   binary). Numerical features then use `StandardScaler`; categorical features (including `hour` and `day_of_week`)
    use one-hot encoding; binary flags pass through unchanged. This gives 72
    inputs.
-3. **Model.** Input → 256 → 128 → 64 → 4, with ReLU and Dropout (0.3) after
+4. **Model.** Input → 256 → 128 → 64 → 4, with ReLU and Dropout (0.3) after
    each hidden layer.
-4. **Training.** Adam (lr 1e-3), batch size 512, unweighted CrossEntropyLoss.
+5. **Training.** Adam (lr 1e-3), batch size 512, unweighted CrossEntropyLoss.
    Weighting the loss by inverse class frequency was tried and made results
    worse (see Results). Training stops when validation loss has not improved
    for 10 epochs, and the best weights are restored.
-5. **Evaluation.** Accuracy and macro/weighted precision, recall and F1 on the
+6. **Evaluation.** Accuracy and macro/weighted precision, recall and F1 on the
    test set. Macro F1 is the primary metric, compared against a majority-class
    baseline.
 

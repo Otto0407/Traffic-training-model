@@ -15,6 +15,7 @@ import torch
 
 from baseline import lookup_baseline
 from config import CLASS_ORDER, DEFAULT_DATA_PATH, DEFAULT_OUTPUT_DIR, TARGET, TrainConfig
+from cleaning import clean_data
 from data_loader import load_data
 from evaluate import predict
 from features import select_features
@@ -60,7 +61,7 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model, preprocessor = load_trained(args.model_dir, device)
     cfg = TrainConfig()
-    train_df, _, test_df = time_split(load_data(args.data), cfg.train_frac, cfg.val_frac)
+    train_df, _, test_df = time_split(clean_data(load_data(args.data))[0], cfg.train_frac, cfg.val_frac)
 
     X_test, _ = select_features(test_df)
     pred = predict(model, preprocessor.transform(X_test).astype(np.float32), device)

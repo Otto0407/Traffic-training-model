@@ -2,6 +2,8 @@
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from config import CLASS_ORDER
@@ -9,17 +11,24 @@ from features import LEAK_FREE, FeatureSet
 
 
 def build_preprocessor(features: FeatureSet = LEAK_FREE) -> ColumnTransformer:
-    """Numerical columns come first in the output, so input noise can target
-    them by index (see train.py)."""
+    """Fill missing values, then scale / one-hot encode.
+
+    The imputers learn their fill values (median, most frequent) from the
+    training set only, like the scaler. Numerical columns come first in the
+    output, so input noise can target them by index (see train.py).
+    """
     return ColumnTransformer(
         transformers=[
-            ("num", StandardScaler(), list(features.numerical)),
+            ("num", make_pipeline(SimpleImputer(strategy="median"), StandardScaler()), list(features.numerical)),
             (
                 "cat",
-                OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                make_pipeline(
+                    SimpleImputer(strategy="most_frequent"),
+                    OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                ),
                 list(features.categorical),
             ),
-            ("bin", "passthrough", list(features.binary)),
+            ("bin", SimpleImputer(strategy="most_frequent"), list(features.binary)),
         ]
     )
 

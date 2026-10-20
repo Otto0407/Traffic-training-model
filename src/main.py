@@ -13,6 +13,7 @@ import torch
 
 from baseline import majority_baseline
 from config import DEFAULT_DATA_PATH, DEFAULT_OUTPUT_DIR, TIMESTAMP, TrainConfig
+from cleaning import clean_data, format_report
 from data_loader import load_data
 from evaluate import compute_metrics, predict
 from pipeline import fit_model, prepare_data, set_seed
@@ -62,7 +63,8 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     # 1-2. Load, split chronologically, preprocess (fitted on train only)
-    df = load_data(args.data)
+    df, cleaning_report = clean_data(load_data(args.data))
+    print("Data cleaning:\n" + format_report(cleaning_report))
     data = prepare_data(df, cfg)
     for name, X in (("train", data.X_train), ("val", data.X_val), ("test", data.X_test)):
         print(f"{name:<5} {len(X):>7} rows")
@@ -92,6 +94,7 @@ def main():
             {
                 "config": asdict(cfg),
                 "best_epoch": history["best_epoch"],
+                "data_cleaning": cleaning_report,
                 "mlp": {k: v for k, v in mlp_metrics.items() if k != "report"},
                 "majority_baseline": {k: v for k, v in base_metrics.items() if k != "report"},
             },

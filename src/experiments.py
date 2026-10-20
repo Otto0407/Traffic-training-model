@@ -16,6 +16,7 @@ import torch
 
 from baseline import lookup_baseline, majority_baseline
 from config import CLASS_ORDER, DEFAULT_DATA_PATH, DEFAULT_OUTPUT_DIR, TrainConfig
+from cleaning import clean_data
 from data_loader import load_data
 from evaluate import compute_metrics, predict
 from features import LEAK_FREE, VEHICLE_RATIOS, FeatureSet, add_vehicle_ratios, all_columns_feature_set
@@ -175,7 +176,7 @@ def main():
     out = args.output_dir
     out.mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    df = load_data(args.data)
+    df, _ = clean_data(load_data(args.data))
     sets = feature_sets(df)
 
     rows = run_baselines(df, TrainConfig())

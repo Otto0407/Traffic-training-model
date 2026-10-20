@@ -85,6 +85,21 @@ BINARY_FEATURES = [
 ]
 
 
+# Physically plausible range for each numerical input (inclusive). Values
+# outside it are treated as sensor or entry errors and set to missing during
+# cleaning, then filled in by the preprocessor.
+VALID_RANGES = {
+    "lanes": (1, 12),
+    "speed_limit": (5, 200),
+    "temperature": (-50, 60),
+    "rainfall_mm": (0, 500),
+    "visibility_km": (0, 50),
+    "parking_occupancy": (0, 100),
+    "traffic_camera_count": (0, 50),
+    "hour": (0, 23),
+    "day_of_week": (0, 6),
+}
+
 @dataclass
 class TrainConfig:
     train_frac: float = 0.6

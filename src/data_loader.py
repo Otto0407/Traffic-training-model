@@ -3,11 +3,12 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import TARGET, TIMESTAMP, CLASS_ORDER
+from config import TIMESTAMP
 
 
 def load_data(path: Path) -> pd.DataFrame:
-    """Read the dataset, parse timestamps and check the target labels.
+    """Read the dataset and parse timestamps. Unparseable timestamps become
+    NaT; invalid rows are handled by cleaning.clean_data, not here.
 
     If the CSV is missing but a .zip with the same name is next to it (as
     downloaded from Kaggle), the CSV is read straight from the zip.
@@ -20,10 +21,6 @@ def load_data(path: Path) -> pd.DataFrame:
             f"Dataset not found at {path}. Download it from Kaggle and place "
             "smart_city_traffic_mobility.csv (or the .zip) in the data/ folder."
         )
-    df = pd.read_csv(path, parse_dates=[TIMESTAMP])
-
-    unknown = set(df[TARGET].unique()) - set(CLASS_ORDER)
-    if unknown:
-        raise ValueError(f"Unexpected {TARGET} values: {sorted(unknown)}")
-
+    df = pd.read_csv(path)
+    df[TIMESTAMP] = pd.to_datetime(df[TIMESTAMP], errors="coerce")
     return df.sort_values(TIMESTAMP).reset_index(drop=True)
