@@ -13,7 +13,7 @@ LEAKING = ["congestion_score", "traffic_density", "vehicle_count", "average_spee
 
 
 def test_every_column_is_kept_or_dropped_exactly_once(raw_data):
-    assert len(KEPT) == len(set(KEPT)) == 25
+    assert len(KEPT) == len(set(KEPT)) == 7
     assert len(DROPPED) == len(set(DROPPED))
     assert not set(KEPT) & set(DROPPED)
     assert set(KEPT) | set(DROPPED) | {TARGET} == set(raw_data.columns)
@@ -41,9 +41,9 @@ def test_missing_column_is_refused(clean_df):
 
 
 def test_feature_set_without():
-    fs = LEAK_FREE.without("hour", "lanes", "is_weekend")
-    assert not {"hour", "lanes", "is_weekend"} & set(fs.columns)
-    assert len(fs.columns) == len(LEAK_FREE.columns) - 3
+    fs = LEAK_FREE.without("hour", "public_event", "not_a_feature")
+    assert not {"hour", "public_event"} & set(fs.columns)
+    assert len(fs.columns) == len(LEAK_FREE.columns) - 2
 
 
 def test_all_columns_set_excludes_ids_time_and_label(clean_df):

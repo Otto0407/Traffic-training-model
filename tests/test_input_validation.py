@@ -77,22 +77,20 @@ def test_clean_input_gives_the_same_model_input_as_training(fitted_preprocessor,
 def messy(small_df):
     rows = small_df.sample(12, random_state=1).reset_index(drop=True)
     m = as_text(rows).rename(columns={"weather_condition": "Weather", "city_zone": "Zone ",
-                                      "rainfall_mm": "Rainfall", "temperature": "temp", "is_holiday": "Is Holiday"})
-    m = m.drop(columns=["parking_occupancy"])
+                                      "public_event": "Public Event", "day_of_week": "weekday"})
+    m = m.drop(columns=["construction_activity"])
     m["Plate Number"] = [f"ABC-{i:04d}" for i in range(12)]
     m["driver_name"] = "Jane Doe"
     m["Phone"] = "0912-345-678"
-    m.loc[0, "Rainfall"] = "3.5 mm"
-    m.loc[1, "Rainfall"] = "1,200"           # out of range
-    m.loc[2, "temp"] = "N/A"
-    m.loc[3, "lanes"] = "two"
-    m.loc[4, "Is Holiday"] = "yes"
-    m.loc[5, "Is Holiday"] = "No"
-    m.loc[6, "Weather"] = " heavy_rain "
-    m.loc[7, "Weather"] = "Sandstorm"        # unknown
-    m.loc[8, "hour"] = ""                    # rebuilt from timestamp
-    m.loc[9, ["hour", "timestamp"]] = ""     # cannot be known
-    m.loc[10, "day_of_week"] = "9"           # impossible, rebuilt from timestamp
+    m.loc[0, "Public Event"] = "yes"
+    m.loc[1, "Public Event"] = "No"
+    m.loc[2, "accident_reported"] = "maybe"     # not a flag -> missing
+    m.loc[3, "accident_reported"] = "TRUE"
+    m.loc[6, "Weather"] = " heavy_rain "        # spelling variant -> Heavy Rain
+    m.loc[7, "Weather"] = "Sandstorm"           # unknown -> missing
+    m.loc[8, "hour"] = ""                       # rebuilt from timestamp
+    m.loc[9, ["hour", "timestamp"]] = ""        # cannot be known
+    m.loc[10, "weekday"] = "9"                  # impossible, rebuilt from timestamp
     m.loc[11, "Zone "] = "downtown core"
     return m, rows
 
@@ -100,29 +98,28 @@ def messy(small_df):
 def test_messy_input_is_repaired(messy, categories):
     m, rows = messy
     features, quality, report = validate_input(m, categories)
-    assert features.loc[0, "rainfall_mm"] == 3.5
-    assert np.isnan(features.loc[1, "rainfall_mm"]) and np.isnan(features.loc[2, "temperature"])
-    assert np.isnan(features.loc[3, "lanes"])
-    assert features.loc[4, "is_holiday"] == 1 and features.loc[5, "is_holiday"] == 0
+    assert features.loc[0, "public_event"] == 1 and features.loc[1, "public_event"] == 0
+    assert np.isnan(features.loc[2, "accident_reported"]) and features.loc[3, "accident_reported"] == 1
     assert features.loc[6, "weather_condition"] == "Heavy Rain" and pd.isna(features.loc[7, "weather_condition"])
     assert features.loc[8, "hour"] == rows.loc[8, "timestamp"].hour
     assert features.loc[10, "day_of_week"] == rows.loc[10, "timestamp"].dayofweek
     assert features.loc[11, "city_zone"] == "Downtown Core"
-    assert report["columns_missing"] == ["parking_occupancy"]
-    assert report["unknown_category_values"] == 1 and report["out_of_range_values"] == 2
+    assert report["columns_missing"] == ["construction_activity"]
+    assert report["unknown_category_values"] == 1 and report["out_of_range_values"] == 1
     assert report["calendar_values_derived_from_timestamp"] == 2
 
 
 def test_quality_flags(messy, categories):
     features, quality, _ = validate_input(messy[0], categories)
     assert quality.loc[9, "data_quality"] == "insufficient_data"
-    assert set(quality.drop(index=9)["data_quality"]) == {"imputed"}  # parking_occupancy missing everywhere
+    assert set(quality.drop(index=9)["data_quality"]) == {"imputed"}  # construction_activity missing everywhere
     assert (quality["n_features_imputed"] >= 1).all()
 
 
 def test_many_missing_features_flag_low_quality(small_df, categories):
     row = as_text(small_df.head(1))
-    for col in ["temperature", "rainfall_mm", "visibility_km", "lanes", "speed_limit", "weather_condition"]:
+    for col in ["city_zone", "weather_condition", "day_of_week", "construction_activity", "public_event",
+                "accident_reported"]:
         row[col] = ""
     _, quality, _ = validate_input(row, categories)
     assert quality.loc[row.index[0], "data_quality"] == "low_quality"

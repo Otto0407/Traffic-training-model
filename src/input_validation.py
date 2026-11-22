@@ -68,8 +68,9 @@ WEEKDAY_RUSH_HOURS = {7, 8, 9, 16, 17, 18, 19}
 # Without the hour the model has almost nothing to go on (removing time
 # features drops macro F1 to ~0.33), so such rows are not predicted.
 CRITICAL_FEATURES = ("hour",)
-# Above this many filled-in features a prediction is flagged as low quality.
-MAX_IMPUTED_FOR_OK = 5
+# If more than this share of the features had to be filled in, a prediction
+# is flagged as low quality.
+MAX_IMPUTED_SHARE = 0.4
 
 
 def normalise_column_name(name) -> str:
@@ -123,8 +124,9 @@ def canonicalise_category(series: pd.Series, known: list) -> tuple:
 
 
 def derive_calendar_fields(df: pd.DataFrame) -> int:
-    """Fill hour, day_of_week, is_weekend, peak_period and rush_hour from the
-    timestamp where they are missing. Returns how many values were derived."""
+    """Fill the calendar features the model uses (any of hour, day_of_week,
+    is_weekend, peak_period, rush_hour) from the timestamp where they are
+    missing. Returns how many values were derived."""
     if TIMESTAMP not in df:
         return 0
     ts = pd.to_datetime(df[TIMESTAMP], errors="coerce", format="mixed")
@@ -132,18 +134,26 @@ def derive_calendar_fields(df: pd.DataFrame) -> int:
 
     def fill(col, values):
         nonlocal derived
+        if col not in FEATURES:
+            return
         if col not in df:
-            df[col] = np.nan
+            df[col] = pd.Series(np.nan, index=df.index, dtype=float if is_numeric(values) else object)
         gap = df[col].isna() & values.notna()
         derived += int(gap.sum())
         df.loc[gap, col] = values[gap]
 
+    def is_numeric(values):
+        return pd.api.types.is_numeric_dtype(values)
+
     fill("hour", ts.dt.hour.astype(float))
     fill("day_of_week", ts.dt.dayofweek.astype(float))
-    fill("is_weekend", (df["day_of_week"] >= 5).astype(float).where(df["day_of_week"].notna()))
-    fill("peak_period", df["hour"].map(PEAK_PERIOD_BY_HOUR))
-    rush = df["hour"].isin(WEEKDAY_RUSH_HOURS) & (df["is_weekend"] == 0)
-    fill("rush_hour", rush.astype(float).where(df["hour"].notna() & df["is_weekend"].notna()))
+    hour = df["hour"] if "hour" in df else ts.dt.hour.astype(float)
+    day = df["day_of_week"] if "day_of_week" in df else ts.dt.dayofweek.astype(float)
+    weekend = (day >= 5).astype(float).where(day.notna())
+    fill("is_weekend", weekend)
+    fill("peak_period", hour.map(PEAK_PERIOD_BY_HOUR).astype(object))
+    rush = (hour.isin(WEEKDAY_RUSH_HOURS) & (weekend == 0)).astype(float)
+    fill("rush_hour", rush.where(hour.notna() & weekend.notna()))
     return derived
 
 
@@ -194,6 +204,8 @@ def validate_input(raw: pd.DataFrame, categories: dict) -> tuple:
 
     out_of_range = 0
     for col, (low, high) in VALID_RANGES.items():
+        if col not in df:
+            continue
         bad = df[col].notna() & ((df[col] < low) | (df[col] > high))
         out_of_range += int(bad.sum())
         df[col] = df[col].mask(bad)
@@ -211,7 +223,7 @@ def validate_input(raw: pd.DataFrame, categories: dict) -> tuple:
     n_missing = features.isna().sum(axis=1)
     critical = features[list(CRITICAL_FEATURES)].isna().any(axis=1)
     status = np.select(
-        [critical, n_missing > MAX_IMPUTED_FOR_OK, n_missing > 0],
+        [critical, n_missing > MAX_IMPUTED_SHARE * len(FEATURES), n_missing > 0],
         ["insufficient_data", "low_quality", "imputed"],
         default="ok",
     )

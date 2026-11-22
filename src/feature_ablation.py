@@ -29,11 +29,21 @@ from cleaning import clean_data
 from config import DEFAULT_DATA_PATH, DEFAULT_OUTPUT_DIR, TrainConfig
 from data_loader import load_data
 from evaluate import compute_metrics, predict
-from features import LEAK_FREE
+from features import FeatureSet
 from md_table import to_markdown
 from pipeline import fit_model, prepare_data
 from style import INK_SECONDARY, SERIES, apply_style
 
+# The ablation was run on the 25-feature set used before it; it is kept here so
+# the analysis can be reproduced now that config.py holds the reduced 7 features.
+ORIGINAL_FEATURES = FeatureSet(
+    categorical=("city_zone", "road_type", "peak_period", "weather_condition", "road_condition",
+                 "iot_sensor_health", "hour", "day_of_week"),
+    numerical=("lanes", "speed_limit", "temperature", "rainfall_mm", "visibility_km", "parking_occupancy",
+               "traffic_camera_count"),
+    binary=("is_weekend", "is_holiday", "rush_hour", "nearby_school", "nearby_hospital", "nearby_market",
+            "construction_activity", "public_event", "accident_reported", "emergency_vehicle_detected"),
+)
 GROUPS = {
     "time": ["hour", "day_of_week", "is_weekend", "is_holiday", "rush_hour", "peak_period"],
     "location_road": ["city_zone", "road_type", "lanes", "speed_limit", "traffic_camera_count",
@@ -46,7 +56,7 @@ MIN_THRESHOLD = 0.0005
 
 
 def evaluate_set(df, removed: tuple, seeds, device, score_test: bool = False) -> dict:
-    features = LEAK_FREE.without(*removed)
+    features = ORIGINAL_FEATURES.without(*removed)
     runs = []
     for seed in seeds:
         cfg = replace(TrainConfig(), seed=seed)
@@ -108,7 +118,7 @@ def main():
     record("full", "(none)", (), full)
     base, threshold = full["val_macro_f1_mean"], max(full["val_macro_f1_std"], MIN_THRESHOLD)
     single = []
-    for feature in LEAK_FREE.columns:
+    for feature in ORIGINAL_FEATURES.columns:
         res = evaluate_set(df, (feature,), args.seeds, device)
         record("single", feature, (feature,), res)
         single.append({"removed": feature, "diff": res["val_macro_f1_mean"] - base, "std": res["val_macro_f1_std"],
@@ -142,8 +152,8 @@ def main():
         f.write(f"Removal kept if validation macro F1 >= {base - threshold:.4f} (full model minus seed spread).\n\n")
         f.write(to_markdown(pd.DataFrame(steps), index=False))
         f.write(f"\nRemoved ({len(removed)}): {', '.join(removed) or 'none'}\n")
-        f.write(f"Kept ({len(LEAK_FREE.columns) - len(removed)}): "
-                f"{', '.join(c for c in LEAK_FREE.columns if c not in removed)}\n")
+        f.write(f"Kept ({len(ORIGINAL_FEATURES.columns) - len(removed)}): "
+                f"{', '.join(c for c in ORIGINAL_FEATURES.columns if c not in removed)}\n")
 
     # Stage 3: test set, once, for the full and the reduced feature set
     final = []

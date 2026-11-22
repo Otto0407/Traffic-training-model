@@ -86,12 +86,12 @@ reaches the output. Shared fixtures are in `tests/conftest.py`.
 | Semicolon or tab separated, Windows encodings | Detected automatically |
 
 Each output row carries `data_quality` (`ok`, `imputed`, `low_quality` when
-more than 5 features had to be filled in, or `insufficient_data`), the number
+more than 40% of the features had to be filled in, or `insufficient_data`), the number
 of filled-in features and the model's confidence.
 
 ### Privacy
 
-- **Data minimisation.** Only the model's 25 input columns (and a timestamp)
+- **Data minimisation.** Only the model's 7 input columns (and a timestamp)
   are read. Every other column, such as licence plates, driver names, phone
   numbers or GPS coordinates, is dropped on arrival; the report counts how
   many columns looked like personal data but never shows their contents.
@@ -122,18 +122,23 @@ PREDICT_ID_SALT=<your secret> python src/predict.py --input data/private/today.c
 | `src/cleaning.py` | Drop duplicate / unusable rows, flag impossible values as missing |
 | `src/features.py` | Feature sets; select model inputs; fail if any column is unaccounted for |
 | `src/split.py` | Chronological 60/20/20 train/validation/test split |
-| `src/preprocessing.py` | StandardScaler + one-hot encoding, label encoding |
+| `src/preprocessing.py` | Missing-value filling, StandardScaler, one-hot encoding, label encoding |
 | `src/dataset.py` | Arrays to PyTorch `DataLoader` (optional class-balanced sampling) |
 | `src/model.py` | `CongestionMLP` (`nn.Module`) |
 | `src/pipeline.py` | Shared split -> preprocess -> train steps |
 | `src/train.py` | Mini-batch training, input-noise augmentation, early stopping |
 | `src/baseline.py` | Majority-class and lookup-table baselines |
-| `src/evaluate.py` | Prediction and test metrics |
+| `src/reference_models.py` | Logistic regression and LightGBM on the same features and split |
+| `src/evaluate.py` | Prediction and metrics (incl. ordinal: QWK, level error) |
+| `src/bootstrap.py` | Block bootstrap confidence intervals over test hours |
+| `src/compare_models.py` | Rank models on validation, score test once with 95% CIs and paired differences |
 | `src/plots.py` | Training curves and confusion matrix |
 | `src/style.py` | Shared figure colours and styling |
 | `src/md_table.py` | DataFrame to Markdown table |
 | `src/explore.py` | Exploratory data analysis |
 | `src/experiments.py` | Multi-seed comparison of modelling choices |
+| `src/tune.py` | Hyperparameter search on validation macro F1 |
+| `src/feature_ablation.py` | Drop-column importance and backward feature elimination |
 | `src/error_analysis.py` | Error breakdown of the trained model |
 | `src/leakage_check.py` | Single-feature predictiveness report |
 | `src/main.py` | Runs the full pipeline |
@@ -155,18 +160,23 @@ PREDICT_ID_SALT=<your secret> python src/predict.py --input data/private/today.c
    so the model is always evaluated on hours it has not seen.
 3. **Preprocessing fitted on train only.** Missing values are filled with the
    training-set median (numerical) or most frequent value (categorical and
-   binary). Numerical features then use `StandardScaler`; categorical features (including `hour` and `day_of_week`)
-   use one-hot encoding; binary flags pass through unchanged. This gives 72
-   inputs.
-4. **Model.** Input → 256 → 128 → 64 → 4, with ReLU and Dropout (0.3) after
-   each hidden layer.
+   binary). Categorical features (including `hour` and `day_of_week`) use
+   one-hot encoding; binary flags pass through unchanged. The final model has
+   no numerical inputs left (the branch with `StandardScaler` stays in place
+   for any that are added). This gives 44 inputs.
+4. **Model.** Input (44) → 256 → 128 → 64 → 4, with ReLU and Dropout (0.3)
+   after each hidden layer; 52,932 parameters.
 5. **Training.** Adam (lr 1e-3), batch size 512, unweighted CrossEntropyLoss.
    Weighting the loss by inverse class frequency was tried and made results
    worse (see Results). Training stops when validation loss has not improved
    for 10 epochs, and the best weights are restored.
-6. **Evaluation.** Accuracy and macro/weighted precision, recall and F1 on the
-   test set. Macro F1 is the primary metric, compared against a majority-class
-   baseline.
+6. **Evaluation.** Every design choice is made on validation macro F1, with
+   three seeds per setting; the test set is scored once per final model.
+   Macro F1 is the primary metric; accuracy, precision, recall, quadratic
+   weighted kappa (the labels are ordered) and the confusion matrix are also
+   reported, with 95% confidence intervals from a bootstrap over test hours.
+   The MLP is compared with a majority-class baseline, a lookup table (most
+   common label per hour × weekend × zone), logistic regression and LightGBM.
 
 ## Feature selection
 
@@ -182,21 +192,17 @@ tree on each column alone. The majority-class rate is 0.498.
 | Derived from traffic | `emission_estimate`, `fuel_waste_estimate`, `air_quality_index` | Consequences of congestion (up to 0.906 alone) |
 | Signal response | `signal_cycle_seconds`, `green_light_duration` | The simulator adapts signals to congestion (a 120 s cycle occurs only with High/Severe; green time alone: 0.898). It is also what a controller would set *from* this model's output, so as an input it would be circular |
 | Identifiers | `record_id`, `road_id`, `latitude`, `longitude`, `timestamp` | IDs, or redundant with `city_zone`, the road attributes and the existing calendar columns |
-| No effect | `intersection_id` | Within a zone, intersections differ only by noise. Removing it left test macro F1 unchanged over 3 seeds and cut the input from 172 to 72 dimensions |
+| No effect | `intersection_id` | Within a zone, intersections differ only by noise. Removing it left macro F1 unchanged over 3 seeds and cut the input from 172 to 72 dimensions |
+| Redundant (feature ablation) | `is_weekend`, `is_holiday`, `rush_hour`, `peak_period`, `road_type`, `lanes`, `speed_limit`, `traffic_camera_count`, `temperature`, `rainfall_mm`, `visibility_km`, `road_condition`, `iot_sensor_health`, `emergency_vehicle_detected`, `parking_occupancy`, `nearby_school`, `nearby_hospital`, `nearby_market` | Removing them one at a time and cumulatively kept validation macro F1 within the seed spread (`feature_ablation.py`, run on the 25-feature set). Most repeat a kept feature: `hour` covers `peak_period` and `rush_hour`, `day_of_week` covers `is_weekend`, `weather_condition` covers rain, visibility and road condition, `city_zone` covers the fixed road attributes. `nearby_hospital` and `nearby_market` were borderline; a paired check with five new seeds put removing both at −0.0001 ± 0.0008 |
 
 Vehicle-mix ratios (heavy / motorcycle / public transport / other as shares of
 `vehicle_count`) were also tested as extra inputs. They avoid the total-volume
 leak but carry no signal in this simulation (same macro F1), so they are not used.
 
-**Kept:** location and road context (`city_zone`,
-`road_type`, `lanes`, `speed_limit`, `traffic_camera_count`, nearby
-school/hospital/market), calendar (`hour`, `day_of_week`, `is_weekend`,
-`is_holiday`, `rush_hour`, `peak_period`), weather (`temperature`,
-`rainfall_mm`, `visibility_km`, `weather_condition`, `road_condition`) and
-events (`construction_activity`, `public_event`, `accident_reported`,
-`emergency_vehicle_detected`, `iot_sensor_health`, `parking_occupancy`).
-These are all known before or at the start of the hour, so the model
-*forecasts* congestion instead of describing it after the fact.
+**Kept (7):** `hour`, `day_of_week`, `city_zone`, `weather_condition`,
+`public_event`, `accident_reported` and `construction_activity`. Note that the
+three event flags describe the same hour, so the model classifies the current
+hour from its context rather than forecasting ahead.
 
 ## Results (test set)
 

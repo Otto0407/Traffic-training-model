@@ -8,9 +8,11 @@ from predict import load_trained, predict_table, pseudonymise, read_table
 
 
 @pytest.fixture(scope="module")
-def tiny_model():
+def tiny_model(fitted_preprocessor, small_df):
+    from features import select_features
     torch.manual_seed(0)
-    model = CongestionMLP(72, [16], len(CLASS_ORDER), 0.0)
+    input_dim = fitted_preprocessor.transform(select_features(small_df.head(1))[0]).shape[1]
+    model = CongestionMLP(input_dim, [16], len(CLASS_ORDER), 0.0)
     model.eval()
     return model
 
@@ -54,9 +56,10 @@ def test_saved_model_round_trip(tmp_path, fitted_preprocessor, tiny_model, cpu):
     from config import TrainConfig
 
     cfg = asdict(replace(TrainConfig(), hidden_sizes=[16], dropout=0.0))
-    torch.save({"state_dict": tiny_model.state_dict(), "input_dim": 72, "config": cfg}, tmp_path / "model.pt")
+    input_dim = tiny_model.net[0].in_features
+    torch.save({"state_dict": tiny_model.state_dict(), "input_dim": input_dim, "config": cfg}, tmp_path / "model.pt")
     joblib.dump(fitted_preprocessor, tmp_path / "preprocessor.joblib")
     model, pre = load_trained(tmp_path, cpu)
-    x = torch.randn(3, 72)
+    x = torch.randn(3, input_dim)
     assert torch.allclose(model(x), tiny_model(x))
     assert not model.training

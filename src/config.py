@@ -47,41 +47,52 @@ DROPPED_FEATURES = {
     # by noise. Dropping it left test metrics unchanged (3 seeds) and cut the
     # input from 172 to 72 dimensions.
     "no_effect": ["intersection_id"],
+    # Removed by feature ablation (src/feature_ablation.py, run on the earlier
+    # 25-feature set): retraining without each of these, one at a time and
+    # cumulatively, kept validation macro F1 within the seed spread. Most repeat
+    # information carried by a kept feature (hour covers peak_period and
+    # rush_hour; day_of_week covers is_weekend; weather_condition covers rain,
+    # visibility and road condition; city_zone covers the fixed road attributes).
+    "redundant_by_ablation": [
+        "is_weekend",
+        "is_holiday",
+        "rush_hour",
+        "peak_period",
+        "road_type",
+        "lanes",
+        "speed_limit",
+        "traffic_camera_count",
+        "temperature",
+        "rainfall_mm",
+        "visibility_km",
+        "road_condition",
+        "iot_sensor_health",
+        "emergency_vehicle_detected",
+        "parking_occupancy",
+        "nearby_school",
+        # These two were borderline in the ablation; a paired check with five
+        # new seeds (100-104) put removing both at -0.0001 ± 0.0008, i.e. noise.
+        "nearby_hospital",
+        "nearby_market",
+    ],
 }
 
-# Features kept for the model: context known before the hour starts.
+# Features kept for the model (7). Note that accident_reported, public_event and
+# construction_activity describe the same hour, so the model classifies the
+# current hour from its context; it does not forecast ahead.
 CATEGORICAL_FEATURES = [
     "city_zone",
-    "road_type",
-    "peak_period",
     "weather_condition",
-    "road_condition",
-    "iot_sensor_health",
     # Calendar values are one-hot encoded so the MLP does not assume that,
     # for example, hour 23 is "far" from hour 0.
     "hour",
     "day_of_week",
 ]
-NUMERICAL_FEATURES = [
-    "lanes",
-    "speed_limit",
-    "temperature",
-    "rainfall_mm",
-    "visibility_km",
-    "parking_occupancy",
-    "traffic_camera_count",
-]
+NUMERICAL_FEATURES = []
 BINARY_FEATURES = [
-    "is_weekend",
-    "is_holiday",
-    "rush_hour",
-    "nearby_school",
-    "nearby_hospital",
-    "nearby_market",
     "construction_activity",
     "public_event",
     "accident_reported",
-    "emergency_vehicle_detected",
 ]
 
 

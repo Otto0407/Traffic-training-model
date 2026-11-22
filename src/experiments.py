@@ -43,7 +43,6 @@ EXPERIMENTS = [
         "time",
         {"balanced_sampling": True},
     ),
-    ("input_noise", "Gaussian noise (std 0.1) on numerical inputs", "leak_free", "time", {"input_noise": 0.1}),
     ("no_dropout", "Dropout 0 (early stopping still on)", "leak_free", "time", {"dropout": 0.0}),
     (
         "no_regularisation",

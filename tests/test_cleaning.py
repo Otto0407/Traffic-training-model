@@ -13,7 +13,7 @@ def dirty(raw_data):
     d.loc[d.index[11], "congestion_level"] = " Low "       # whitespace -> fixed
     d.loc[d.index[12], TIMESTAMP] = pd.NaT                 # missing time
     d.loc[d.index[13], "temperature"] = -100000            # impossible value
-    d.loc[d.index[14], "is_weekend"] = 7                   # invalid flag
+    d.loc[d.index[14], "accident_reported"] = 7            # invalid flag
     d.loc[d.index[15], "weather_condition"] = "  "         # blank category
     return d.reset_index(drop=True)
 
