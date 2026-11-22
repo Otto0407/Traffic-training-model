@@ -1,0 +1,12 @@
+[tool.pytest.ini_options]
+# Run with: python -m pytest            (all tests, about a minute)
+#           python -m pytest -m "not slow"  (skip the short training runs)
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"
+markers = [
+    "slow: trains a model for a few epochs (still well under a minute)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

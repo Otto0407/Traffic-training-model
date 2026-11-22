@@ -1,39 +1,66 @@
-"""Check that cleaning leaves the real data untouched and fixes a dirty sample.
+import pandas as pd
+import pytest
 
-Run: python tests/test_cleaning.py
-"""
-import sys
-from pathlib import Path
+from cleaning import clean_data, format_report
+from config import TIMESTAMP
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
-import numpy as np, pandas as pd
-from data_loader import load_data
-from cleaning import clean_data
-from preprocessing import build_preprocessor
-from features import select_features
-from config import DEFAULT_DATA_PATH
-raw = load_data(DEFAULT_DATA_PATH)
-clean, rep = clean_data(raw)
-print("real data:", rep)
-assert len(clean) == len(raw)
-assert (clean.dtypes == raw.dtypes).all(), "dtypes changed on clean data"
-# dirty sample
-d = raw.head(300).copy()
-d = pd.concat([d, d.iloc[:5]])                      # 5 exact duplicates
-d.loc[d.index[10], "congestion_level"] = "Unknown"   # bad label
-d.loc[d.index[11], "congestion_level"] = " Low "     # whitespace label -> fixed
-d.loc[d.index[12], "timestamp"] = pd.NaT             # missing time
-d.loc[d.index[13], "temperature"] = -100000          # impossible value
-d.loc[d.index[14], "is_weekend"] = 7                 # bad flag
-d.loc[d.index[15], "weather_condition"] = np.nan     # missing category
-d.loc[d.index[16], "rainfall_mm"] = np.nan           # missing number
-c, r = clean_data(d)
-print("dirty sample:", r)
-assert r["duplicate_rows_dropped"] == 5 and r["invalid_label_rows_dropped"] == 1
-assert r["missing_timestamp_rows_dropped"] == 1 and r["out_of_range_values_set_missing"] == 1
-assert r["invalid_binary_values_set_missing"] == 1 and r["rows_out"] == 298
-X, _ = select_features(c)
-out = build_preprocessor().fit_transform(X)
-assert not np.isnan(out.astype(float)).any(), "NaN left after imputation"
-print("preprocessed shape", out.shape, "- no NaN")
-print("All cleaning checks passed.")
+
+@pytest.fixture
+def dirty(raw_data):
+    d = raw_data.head(300).copy()
+    d = pd.concat([d, d.iloc[:5]])                        # 5 exact duplicates
+    d.loc[d.index[10], "congestion_level"] = "Unknown"     # invalid label
+    d.loc[d.index[11], "congestion_level"] = " Low "       # whitespace -> fixed
+    d.loc[d.index[12], TIMESTAMP] = pd.NaT                 # missing time
+    d.loc[d.index[13], "temperature"] = -100000            # impossible value
+    d.loc[d.index[14], "is_weekend"] = 7                   # invalid flag
+    d.loc[d.index[15], "weather_condition"] = "  "         # blank category
+    return d.reset_index(drop=True)
+
+
+def test_real_data_passes_through_unchanged(raw_data):
+    clean, report = clean_data(raw_data)
+    assert report["rows_out"] == report["rows_in"] == len(raw_data)
+    assert (clean.dtypes == raw_data.dtypes).all()
+    # Row order must be kept: re-sorting changes mini-batches and results.
+    assert (clean["record_id"].to_numpy() == raw_data["record_id"].to_numpy()).all()
+
+
+def test_dirty_rows_are_fixed_or_dropped(dirty):
+    clean, report = clean_data(dirty)
+    assert report["duplicate_rows_dropped"] == 5
+    assert report["invalid_label_rows_dropped"] == 1
+    assert report["missing_timestamp_rows_dropped"] == 1
+    assert report["out_of_range_values_set_missing"] == 1
+    assert report["invalid_binary_values_set_missing"] == 1
+    assert report["rows_out"] == 298
+    assert "Low" in clean["congestion_level"].values and " Low " not in clean["congestion_level"].values
+    assert clean["temperature"].isna().sum() == 1
+    assert clean["weather_condition"].isna().sum() == 1
+
+
+def test_repeated_intersection_hour_keeps_first(raw_data):
+    d = raw_data.head(5).copy()
+    twin = d.iloc[[0]].copy()
+    twin["temperature"] = 99.0  # same intersection and hour, different reading
+    clean, report = clean_data(pd.concat([d, twin]))
+    assert report["duplicate_intersection_hours_dropped"] == 1
+    assert clean.iloc[0]["temperature"] == d.iloc[0]["temperature"]
+
+
+def test_cleaning_is_idempotent(dirty):
+    once, _ = clean_data(dirty)
+    twice, report = clean_data(once)
+    assert report["rows_out"] == report["rows_in"]
+    pd.testing.assert_frame_equal(once, twice)
+
+
+def test_input_is_not_modified(dirty):
+    before = dirty.copy()
+    clean_data(dirty)
+    pd.testing.assert_frame_equal(dirty, before)
+
+
+def test_report_formats_every_key(dirty):
+    _, report = clean_data(dirty)
+    assert len(format_report(report).splitlines()) == len(report)

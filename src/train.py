@@ -8,7 +8,11 @@ from torch.utils.data import DataLoader
 
 
 def class_weights(y_train: np.ndarray, num_classes: int) -> torch.Tensor:
-    """Inverse-frequency weights, normalised so they average to 1."""
+    """Inverse-frequency ("balanced") weights: n_samples / (n_classes * count).
+
+    Averaged over the training rows (i.e. weighted by class frequency) they
+    equal 1, so the overall loss scale stays comparable to the unweighted loss.
+    """
     counts = np.bincount(y_train, minlength=num_classes).astype(np.float64)
     weights = counts.sum() / (num_classes * np.maximum(counts, 1))
     return torch.as_tensor(weights, dtype=torch.float32)

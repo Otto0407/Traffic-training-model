@@ -50,6 +50,25 @@ python src/predict.py --input new_rows.csv --output predictions.csv
 Outputs written to `outputs/`: `model.pt`, `preprocessor.joblib`,
 `metrics.json`, `training_curves.png`, `confusion_matrix.png`.
 
+## Testing
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest                 # all 109 tests, a few minutes on a laptop CPU
+python -m pytest -m "not slow"   # skip the short training runs
+```
+
+The tests cover every module: loading (zip fallback, bad timestamps),
+cleaning (each kind of dirty row, idempotence, row order kept), feature
+selection (every column kept or dropped exactly once, no leaking column can
+reach the model), the time split (strictly chronological, no hour in two
+subsets), preprocessing (fitted on training rows only, missing values filled),
+the model, training (early stopping, best-weight restore, every training
+option, same seed gives the same run), metrics (ordinal metrics punish distant
+errors more), baselines, the block bootstrap, the model comparison, input
+validation on messy data, prediction end to end, and that no personal data
+reaches the output. Shared fixtures are in `tests/conftest.py`.
+
 ## Using the model on real-world data
 
 `predict.py` is built for input that is messier than the training set:
@@ -72,7 +91,7 @@ of filled-in features and the model's confidence.
 
 ### Privacy
 
-- **Data minimisation.** Only the model's 26 input columns (and a timestamp)
+- **Data minimisation.** Only the model's 25 input columns (and a timestamp)
   are read. Every other column, such as licence plates, driver names, phone
   numbers or GPS coordinates, is dropped on arrival; the report counts how
   many columns looked like personal data but never shows their contents.
@@ -120,8 +139,7 @@ PREDICT_ID_SALT=<your secret> python src/predict.py --input data/private/today.c
 | `src/main.py` | Runs the full pipeline |
 | `src/input_validation.py` | Normalise and validate real-world input; drop personal data |
 | `src/predict.py` | Predicts labels for new rows with a saved model; privacy-preserving output |
-| `tests/test_cleaning.py` | Checks cleaning on the real data and on a deliberately dirty sample |
-| `tests/test_input_validation.py` | Checks prediction on messy input, personal-data removal and ID hashing |
+| `tests/` | pytest suite, one file per module (see Testing below) |
 
 ## Method
 
