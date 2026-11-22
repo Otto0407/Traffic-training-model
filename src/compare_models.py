@@ -52,7 +52,7 @@ def compare(data, predictions: dict, reference: str = "MLP", n_boot: int = 1000)
     rows, details = [], {}
     for name, (val_pred, test_pred) in predictions.items():
         test = compute_metrics(data.y_test, test_pred)
-        row = {"model": name, "val_macro_f1": _macro_f1(data.y_val, val_pred)}
+        row = {"model": name, "val_macro_f1": round(_macro_f1(data.y_val, val_pred), 4)}
         for label, fn in (("macro_f1", _macro_f1), ("accuracy", _accuracy), ("qwk", _qwk)):
             point, low, high = bootstrap_ci(data.y_test, test_pred, groups, fn, n_boot=n_boot)
             row[f"test_{label}"] = f"{point:.3f} [{low:.3f}, {high:.3f}]"
