@@ -2,3 +2,10 @@ __pycache__/
 *.pyc
 data/*.csv
 outputs/
+
+# Real-world data and predictions may contain personal data: never commit them.
+data/private/
+data/raw/
+predictions*.csv
+*report*.json
+.env

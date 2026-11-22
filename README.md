@@ -50,6 +50,50 @@ python src/predict.py --input new_rows.csv --output predictions.csv
 Outputs written to `outputs/`: `model.pt`, `preprocessor.joblib`,
 `metrics.json`, `training_curves.png`, `confusion_matrix.png`.
 
+## Using the model on real-world data
+
+`predict.py` is built for input that is messier than the training set:
+
+| Problem in the input | What happens |
+| --- | --- |
+| Column names in another case or spelling (`Weather`, `Zone `, `temp`) | Normalised and mapped to the model's names (`COLUMN_ALIASES` in `input_validation.py`) |
+| Numbers as text (`3.5 mm`, `1,200`, `N/A`) | Parsed; unreadable values become missing |
+| Flags as `yes`/`no`/`true`/`false` | Converted to 1/0 |
+| Category spelling variants (`heavy_rain`, `downtown core`) | Mapped onto the categories seen in training; unknown values become missing |
+| Impossible values (outside `VALID_RANGES`) | Treated as missing |
+| Missing calendar fields | Rebuilt from a timestamp if one is present |
+| Missing columns or values | Filled with the training-set median / most frequent value |
+| No hour and no timestamp | Not predicted (`data_quality = insufficient_data`) |
+| Semicolon or tab separated, Windows encodings | Detected automatically |
+
+Each output row carries `data_quality` (`ok`, `imputed`, `low_quality` when
+more than 5 features had to be filled in, or `insufficient_data`), the number
+of filled-in features and the model's confidence.
+
+### Privacy
+
+- **Data minimisation.** Only the model's 26 input columns (and a timestamp)
+  are read. Every other column, such as licence plates, driver names, phone
+  numbers or GPS coordinates, is dropped on arrival; the report counts how
+  many columns looked like personal data but never shows their contents.
+- **No input copied to the output.** The prediction file contains only the
+  prediction, confidence and quality flag, in the input's row order.
+- **Pseudonymised IDs.** `--id-column record_id --hash-ids` adds a keyed hash
+  (HMAC-SHA256) of the ID so results can be matched back. The key comes from
+  the `PREDICT_ID_SALT` environment variable and is never stored, so the hash
+  cannot be reversed by someone who only has the output.
+- **Nothing sensitive is logged.** Reports hold counts and column names only.
+- **Safe loading.** The model checkpoint is loaded with `weights_only=True`.
+  The preprocessor is a pickle file: only load one you trained yourself.
+- **Keep real data out of git.** Put it in `data/private/`; that folder,
+  prediction files and reports are in `.gitignore`. (The dataset zip in
+  `data/` is public, simulated data.)
+
+```bash
+PREDICT_ID_SALT=<your secret> python src/predict.py --input data/private/today.csv \
+    --output predictions.csv --id-column record_id --hash-ids --report report.json
+```
+
 ## Project structure
 
 | File | Responsibility |
@@ -74,8 +118,10 @@ Outputs written to `outputs/`: `model.pt`, `preprocessor.joblib`,
 | `src/error_analysis.py` | Error breakdown of the trained model |
 | `src/leakage_check.py` | Single-feature predictiveness report |
 | `src/main.py` | Runs the full pipeline |
-| `src/predict.py` | Predicts labels for new rows with a saved model |
+| `src/input_validation.py` | Normalise and validate real-world input; drop personal data |
+| `src/predict.py` | Predicts labels for new rows with a saved model; privacy-preserving output |
 | `tests/test_cleaning.py` | Checks cleaning on the real data and on a deliberately dirty sample |
+| `tests/test_input_validation.py` | Checks prediction on messy input, personal-data removal and ID hashing |
 
 ## Method
 
