@@ -24,6 +24,8 @@ class PreparedData:
     y_val: np.ndarray
     X_test: np.ndarray
     y_test: np.ndarray
+    train_df: pd.DataFrame
+    val_df: pd.DataFrame
     test_df: pd.DataFrame
     preprocessor: ColumnTransformer
     num_numeric: int
@@ -56,6 +58,8 @@ def prepare_data(df: pd.DataFrame, cfg, features: FeatureSet = LEAK_FREE, split:
         y_val=encode_labels(y_val),
         X_test=preprocessor.transform(X_test).astype(np.float32),
         y_test=encode_labels(y_test),
+        train_df=train_df,
+        val_df=val_df,
         test_df=test_df,
         preprocessor=preprocessor,
         num_numeric=len(features.numerical),

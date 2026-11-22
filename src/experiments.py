@@ -1,6 +1,9 @@
 """Compare modelling choices: feature set, split, imbalance handling,
 augmentation and regularisation. Every MLP variant is trained with several
-seeds and the mean ± std of the test metrics is reported.
+seeds and the mean ± std of the metrics is reported.
+
+Choices are made on validation macro F1 (val_macro_f1); the test columns are
+reported alongside but are not used to pick a configuration.
 
 Usage: python src/experiments.py [--seeds 42 43 44] [--only NAME ...]
 Writes outputs/experiments/{results.csv, summary.md, macro_f1.png}.
@@ -22,7 +25,6 @@ from evaluate import compute_metrics, predict
 from features import LEAK_FREE, VEHICLE_RATIOS, FeatureSet, add_vehicle_ratios, all_columns_feature_set
 from md_table import to_markdown
 from pipeline import fit_model, prepare_data
-from split import time_split
 from style import INK_SECONDARY, SERIES, apply_style
 
 TIME_FEATURES = ("hour", "rush_hour", "peak_period")
@@ -67,12 +69,14 @@ def feature_sets(df: pd.DataFrame) -> dict:
     }
 
 
-def metric_row(name: str, seed, y_true, y_pred, extra: dict = None) -> dict:
+def metric_row(name: str, seed, y_true, y_pred, extra: dict = None, y_val=None, val_pred=None) -> dict:
     m = compute_metrics(y_true, y_pred)
     row = {
         "experiment": name,
         "seed": seed,
+        "val_macro_f1": compute_metrics(y_val, val_pred)["f1_macro"] if y_val is not None else np.nan,
         "accuracy": m["accuracy"],
+        "qwk": m["qwk"],
         "macro_f1": m["f1_macro"],
         "weighted_f1": m["f1_weighted"],
         "macro_precision": m["precision_macro"],
@@ -90,14 +94,15 @@ def metric_row(name: str, seed, y_true, y_pred, extra: dict = None) -> dict:
 
 
 def run_baselines(df: pd.DataFrame, cfg: TrainConfig) -> list:
-    train_df, _, test_df = time_split(df, cfg.train_frac, cfg.val_frac)
     data = prepare_data(df, cfg)
-    rows = [metric_row("baseline_majority", "-", data.y_test, majority_baseline(data.y_train, len(data.y_test)))]
+    rows = [metric_row("baseline_majority", "-", data.y_test, majority_baseline(data.y_train, len(data.y_test)),
+                       y_val=data.y_val, val_pred=majority_baseline(data.y_train, len(data.y_val)))]
     for name, keys in (
         ("baseline_hour_lookup", ["hour"]),
         ("baseline_hour_weekend_zone_lookup", ["hour", "is_weekend", "city_zone"]),
     ):
-        rows.append(metric_row(name, "-", data.y_test, lookup_baseline(train_df, test_df, keys)))
+        rows.append(metric_row(name, "-", data.y_test, lookup_baseline(data.train_df, data.test_df, keys),
+                               y_val=data.y_val, val_pred=lookup_baseline(data.train_df, data.val_df, keys)))
     return rows
 
 
@@ -122,11 +127,13 @@ def run_mlp(df, name, fs_key, split, overrides, seed, sets, device) -> dict:
             "final_train_loss": history["train_loss"][-1],
             "final_val_loss": history["val_loss"][-1],
         },
+        y_val=data.y_val,
+        val_pred=predict(model, data.X_val, device),
     )
 
 
 def summarise(results: pd.DataFrame) -> pd.DataFrame:
-    metrics = ["accuracy", "macro_precision", "macro_recall", "macro_f1", "weighted_f1"] + [
+    metrics = ["val_macro_f1", "accuracy", "macro_precision", "macro_recall", "macro_f1", "weighted_f1", "qwk"] + [
         f"f1_{c}" for c in CLASS_ORDER
     ]
     order = list(dict.fromkeys(results["experiment"]))
@@ -142,24 +149,35 @@ def summarise(results: pd.DataFrame) -> pd.DataFrame:
 
 
 def plot_macro_f1(results: pd.DataFrame, path: Path) -> None:
+    """Validation (selection metric) and test macro F1 side by side."""
     apply_style()
     order = list(dict.fromkeys(results["experiment"]))
-    g = results.groupby("experiment", sort=False)["macro_f1"]
-    mean, std = g.mean().reindex(order), g.std().fillna(0).reindex(order)
-    is_final = [n == "final" for n in order]
-
-    fig, ax = plt.subplots(figsize=(8, 0.45 * len(order) + 1.2))
+    grouped = results.groupby("experiment", sort=False)
     y = np.arange(len(order))[::-1]
-    colors = [SERIES[1] if f else SERIES[0] for f in is_final]
-    ax.barh(y, mean, xerr=std, height=0.6, color=colors, error_kw={"ecolor": INK_SECONDARY, "lw": 1})
-    for yi, m in zip(y, mean):
-        ax.text(m + 0.015, yi, f"{m:.3f}", va="center", fontsize=9, color=INK_SECONDARY)
+    height = 0.38
+
+    fig, ax = plt.subplots(figsize=(8.5, 0.55 * len(order) + 1.4))
+    for offset, (col, label, color) in zip(
+        (height / 2, -height / 2),
+        (("val_macro_f1", "Validation (used for selection)", SERIES[0]), ("macro_f1", "Test", SERIES[1])),
+    ):
+        mean = grouped[col].mean().reindex(order)
+        std = grouped[col].std().fillna(0).reindex(order)
+        ax.barh(y + offset, mean, xerr=std, height=height, color=color, label=label,
+                edgecolor="white", linewidth=1, error_kw={"ecolor": INK_SECONDARY, "lw": 1})
+        if col == "val_macro_f1":
+            for yi, m in zip(y, mean):
+                ax.text(m + 0.012, yi + offset, f"{m:.3f}", va="center", fontsize=8, color=INK_SECONDARY)
     ax.set_yticks(y, order)
+    for tick, name in zip(ax.get_yticklabels(), order):
+        if name == "final":
+            tick.set_fontweight("bold")
     ax.set_xlim(0, 1.08)
-    ax.set_xlabel("Test macro F1 (mean ± std over seeds)")
-    ax.set_title("Macro F1 by experiment (final model highlighted)")
+    ax.set_xlabel("Macro F1 (mean ± std over seeds)")
     ax.grid(axis="y", visible=False)
-    fig.tight_layout()
+    handles, labels = ax.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.995))
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(path, dpi=150)
     plt.close(fig)
 
