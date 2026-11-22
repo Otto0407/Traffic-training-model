@@ -57,7 +57,8 @@ def train_model(
     model.to(device)
     weight = loss_weights.to(device) if loss_weights is not None else None
     criterion = nn.CrossEntropyLoss(weight=weight)
-    optimizer = torch.optim.Adam(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
+    optimizer_cls = {"adam": torch.optim.Adam, "adamw": torch.optim.AdamW}[cfg.optimizer]
+    optimizer = optimizer_cls(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
 
     history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
     best_loss, best_state, best_epoch, stale = float("inf"), None, 0, 0

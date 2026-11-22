@@ -107,6 +107,9 @@ class TrainConfig:
     hidden_sizes: list = field(default_factory=lambda: [256, 128, 64])
     dropout: float = 0.3
     learning_rate: float = 1e-3
+    # "adam" (L2 penalty mixed into the gradient) or "adamw" (decoupled weight
+    # decay, the usual choice when weight_decay > 0).
+    optimizer: str = "adam"
     weight_decay: float = 0.0
     batch_size: int = 512
     max_epochs: int = 100
